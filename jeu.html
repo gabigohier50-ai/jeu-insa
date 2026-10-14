@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Campus Quest</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #0f1220; color: #fff; font-family: "Courier New", monospace; }
+  body { display: flex; align-items: center; justify-content: center; }
+
+  #game { position: relative; width: 800px; max-width: 100vw; aspect-ratio: 4 / 3; background: #000; overflow: hidden; border: 3px solid #2b3050; border-radius: 6px; }
+  canvas#world { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+  .overlay { position: absolute; inset: 0; display: none; }
+  .overlay.show { display: flex; }
+
+  /* ---------- Choix de classe ---------- */
+  #select { background: radial-gradient(circle at 50% 30%, #2a3b7a, #0f1220 70%); flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px; }
+  #select h1 { font-size: 2.2rem; margin: 0 0 6px; letter-spacing: 2px; }
+  #select p { margin: 0 0 24px; color: #b9c2ff; }
+  .cards { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; }
+  .card { width: 280px; background: #1a2040; border: 3px solid #4457b8; border-radius: 12px; padding: 18px; cursor: pointer; color: #fff; font-family: inherit; text-align: left; transition: transform .15s, border-color .15s, background .15s; }
+  .card:hover { transform: translateY(-4px); border-color: #ffd447; background: #222a55; }
+  .card .em { font-size: 3.2rem; text-align: center; }
+  .card h2 { margin: 6px 0; text-align: center; }
+  .card ul { padding-left: 18px; margin: 8px 0 0; font-size: .85rem; line-height: 1.5; color: #d6dcff; }
+
+  /* ---------- HUD ---------- */
+  #hud { position: absolute; top: 8px; left: 8px; right: 8px; display: none; justify-content: space-between; align-items: flex-start; pointer-events: none; font-size: .8rem; }
+  #hud.show { display: flex; }
+  #hud .box { background: rgba(10, 12, 30, .75); border: 2px solid #4457b8; border-radius: 8px; padding: 6px 10px; line-height: 1.5; }
+  #minimap { border: 2px solid #4457b8; border-radius: 6px; background: #12301a; display: block; }
+  #prompt { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); background: rgba(10,12,30,.9); border: 2px solid #ffd447; border-radius: 8px; padding: 8px 16px; display: none; font-weight: bold; color: #ffd447; }
+  #prompt.show { display: block; }
+
+  /* ---------- Combat ---------- */
+  #battle { background: linear-gradient(#7fb7e8 0%, #cfe8ff 45%, #8fd16a 45%, #5ea146 100%); flex-direction: column; justify-content: space-between; padding: 14px; color: #1a1a2e; }
+  .fighter-row { display: flex; justify-content: space-between; align-items: center; }
+  .fighter-row.bottom { flex-direction: row-reverse; }
+  .info { width: 250px; background: #f8f4dc; border: 3px solid #333; border-radius: 10px; padding: 8px 12px; box-shadow: 3px 3px 0 #0004; }
+  .info .nm { font-weight: bold; font-size: 1rem; }
+  .hpline { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: .8rem; }
+  .bar { flex: 1; height: 12px; background: #444; border-radius: 8px; overflow: hidden; border: 2px solid #222; }
+  .bar > div { height: 100%; width: 100%; background: #3ecf5a; transition: width .5s, background .3s; }
+  .sprite { font-size: 6rem; filter: drop-shadow(4px 6px 0 #0003); }
+  .sprite.hit { animation: shake .35s; }
+  @keyframes shake { 0%,100% { transform: translateX(0);} 25% { transform: translateX(-10px);} 75% { transform: translateX(10px);} }
+  #panel { display: flex; gap: 10px; height: 150px; }
+  #log { flex: 1.3; background: #10142e; color: #fff; border: 3px solid #333; border-radius: 10px; padding: 10px 12px; overflow-y: auto; font-size: .9rem; line-height: 1.45; }
+  #log div { margin-bottom: 3px; }
+  #log div:last-child { color: #ffd447; }
+  #moves { flex: 1; display: grid; grid-template-columns: 1fr; gap: 8px; align-content: start; }
+  #moves button { background: #f8f4dc; border: 3px solid #333; border-radius: 10px; padding: 8px 10px; font-family: inherit; font-size: .9rem; text-align: left; cursor: pointer; color: #1a1a2e; transition: background .15s, transform .1s; }
+  #moves button small { display: block; opacity: .75; font-size: .72rem; }
+  #moves button:hover:not(:disabled) { background: #ffe58a; transform: translateX(3px); }
+  #moves button:disabled { opacity: .45; cursor: not-allowed; }
+
+  /* ---------- Fin ---------- */
+  #end { background: rgba(8, 10, 25, .92); flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px; }
+  #end h1 { font-size: 2rem; }
+  #end button { margin-top: 16px; background: #ffd447; border: none; padding: 10px 22px; font-size: 1rem; font-family: inherit; border-radius: 8px; cursor: pointer; }
+</style>
+</head>
+<body>
+<div id="game">
+  <canvas id="world" width="800" height="600"></canvas>
+
+  <div id="hud">
+    <div class="box" id="hudInfo"></div>
+    <canvas id="minimap" width="160" height="120"></canvas>
+  </div>
+  <div id="prompt">Appuie sur E pour combattre</div>
+
+  <!-- Choix de la classe -->
+  <div id="select" class="overlay show">
+    <h1>🎓 CAMPUS QUEST</h1>
+    <p>Choisis ta classe pour entrer sur le campus.</p>
+    <div class="cards">
+      <button class="card" data-class="etudiant">
+        <div class="em">🧑‍🎓</div>
+        <h2>Étudiant</h2>
+        <ul>
+          <li>10 PV</li>
+          <li><b>Grève</b> : bloque le tour de l'adversaire et rend 1 PV</li>
+          <li><b>Ana fonc</b> : inflige 3 PV</li>
+        </ul>
+      </button>
+      <button class="card" data-class="staff">
+        <div class="em">🧑‍💼</div>
+        <h2>Staff</h2>
+        <ul>
+          <li>12 PV</li>
+          <li><b>Fermeture du parking</b> : bloque une attaque aléatoire de l'adversaire</li>
+          <li><b>Administration</b> : inflige 3 PV</li>
+        </ul>
+      </button>
+    </div>
+  </div>
+
+  <!-- Combat -->
+  <div id="battle" class="overlay">
+    <div class="fighter-row">
+      <div class="info">
+        <div class="nm" id="eName"></div>
+        <div class="hpline">PV <div class="bar"><div id="eBar"></div></div><span id="eHp"></span></div>
+      </div>
+      <div class="sprite" id="eSprite"></div>
+    </div>
+    <div class="fighter-row bottom">
+      <div class="info">
+        <div class="nm" id="pName"></div>
+        <div class="hpline">PV <div class="bar"><div id="pBar"></div></div><span id="pHp"></span></div>
+      </div>
+      <div class="sprite" id="pSprite"></div>
+    </div>
+    <div id="panel">
+      <div id="log"></div>
+      <div id="moves"></div>
+    </div>
+  </div>
+
+  <!-- Victoire -->
+  <div id="end" class="overlay">
+    <h1>🏆 Bravo !</h1>
+    <p>Tu as vaincu les trois boss du campus.</p>
+    <button onclick="location.reload()">Rejouer</button>
+  </div>
+</div>
+
+<script>
+/* =====================================================
+   DONNÉES
+===================================================== */
+const VIEW_W = 800, VIEW_H = 600;
+const WORLD_W = 2400, WORLD_H = 1800;
+const SPAWN = { x: 1200, y: 900 };
+
+const CLASSES = {
+  etudiant: {
+    name: "Étudiant", emoji: "🧑‍🎓", maxHp: 10,
+    moves: [
+      { id: "greve", name: "Grève", desc: "Bloque le tour adverse, +1 PV", type: "greve", special: true },
+      { id: "ana",   name: "Ana fonc", desc: "Inflige 3 PV", type: "dmg", dmg: 3 }
+    ]
+  },
+  staff: {
+    name: "Staff", emoji: "🧑‍💼", maxHp: 12,
+    moves: [
+      { id: "parking", name: "Fermeture du parking", desc: "Bloque une attaque adverse au hasard", type: "parking", special: true },
+      { id: "admin",   name: "Administration", desc: "Inflige 3 PV", type: "dmg", dmg: 3 }
+    ]
+  }
+};
+
+const BOSSES = [
+  {
+    id: "compta", name: "M. Dupont, Directeur Financier", emoji: "💼", x: 2000, y: 300, hp: 9, glow: "#ffd447",
+    attacks: [
+      { name: "Coupe budgétaire", dmg: 2 },
+      { name: "Formulaire CERFA", dmg: 1, stun: true },
+      { name: "Audit surprise", dmg: 3 }
+    ]
+  },
+  {
+    id: "maths", name: "Pr Intégrale", emoji: "🧮", x: 400, y: 1450, hp: 12, glow: "#7cf2ff",
+    attacks: [
+      { name: "Interro surprise", dmg: 3 },
+      { name: "Démonstration infinie", dmg: 1, stun: true },
+      { name: "Note éliminatoire", dmg: 2 }
+    ]
+  },
+  {
+    id: "wifi", name: "Le Bug du Wifi", emoji: "📡", x: 2050, y: 1500, hp: 15, glow: "#ff6b6b",
+    attacks: [
+      { name: "Coupure réseau", dmg: 2, stun: true },
+      { name: "Écran bleu", dmg: 3 },
+      { name: "Mise à jour forcée", dmg: 1, heal: 3 }
+    ]
+  }
+];
+BOSSES.forEach(b => b.defeated = false);
+
+/* =====================================================
+   MONDE : obstacles générés de façon déterministe
+===================================================== */
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const rand = mulberry32(2026);
+
+const lakes = [
+  { x: 900,  y: 200,  w: 320, h: 200 },
+  { x: 1500, y: 1050, w: 360, h: 250 },
+  { x: 200,  y: 300,  w: 260, h: 340 }
+];
+
+const trees = [];
+const flowers = [];
+function farFrom(x, y, px, py, d) { return Math.hypot(x - px, y - py) > d; }
+function inLake(x, y, m) { return lakes.some(l => x > l.x - m && x < l.x + l.w + m && y > l.y - m && y < l.y + l.h + m); }
+
+while (trees.length < 170) {
+  const x = 40 + rand() * (WORLD_W - 80);
+  const y = 60 + rand() * (WORLD_H - 100);
+  if (!farFrom(x, y, SPAWN.x, SPAWN.y, 160)) continue;
+  if (BOSSES.some(b => !farFrom(x, y, b.x, b.y, 140))) continue;
+  if (inLake(x, y, 30)) continue;
+  trees.push({ x, y, e: rand() < 0.8 ? "🌲" : "🌳" });
+}
+for (let i = 0; i < 260; i++) {
+  const x = rand() * WORLD_W, y = rand() * WORLD_H;
+  if (inLake(x, y, 0)) continue;
+  flowers.push({ x, y, e: ["🌼", "🌷", "🍄", "🌿"][Math.floor(rand() * 4)] });
+}
+
+// rectangles de collision
+const solids = [];
+lakes.forEach(l => solids.push({ x: l.x, y: l.y, w: l.w, h: l.h }));
+trees.forEach(t => solids.push({ x: t.x - 12, y: t.y - 6, w: 24, h: 20 }));
+
+/* =====================================================
+   ÉTAT DU JEU
+===================================================== */
+const $ = id => document.getElementById(id);
+const canvas = $("world"), ctx = canvas.getContext("2d");
+const mini = $("minimap"), mctx = mini.getContext("2d");
+
+let state = "select";        // select | world | battle | end
+const player = { x: SPAWN.x, y: SPAWN.y, cls: null, hp: 0, maxHp: 0, moving: false };
+const keys = {};
+let nearBoss = null;
+let B = null;                // état du combat courant
+
+/* =====================================================
+   CHOIX DE LA CLASSE
+===================================================== */
+document.querySelectorAll(".card").forEach(btn => {
+  btn.addEventListener("click", () => {
+    player.cls = CLASSES[btn.dataset.class];
+    player.maxHp = player.cls.maxHp;
+    player.hp = player.maxHp;
+    $("select").classList.remove("show");
+    $("hud").classList.add("show");
+    state = "world";
+    updateHudInfo();
+  });
+});
+
+function updateHudInfo() {
+  const done = BOSSES.filter(b => b.defeated).length;
+  $("hudInfo").innerHTML =
+    `${player.cls.emoji} <b>${player.cls.name}</b> — ${player.hp}/${player.maxHp} PV<br>` +
+    `Boss vaincus : ${done}/3<br><span style="opacity:.7">ZQSD / flèches : bouger · E : interagir</span>`;
+}
+
+/* =====================================================
+   ENTRÉES CLAVIER
+===================================================== */
+window.addEventListener("keydown", e => {
+  const k = e.key.toLowerCase();
+  keys[k] = true;
+  if (["arrowup", "arrowdown", "arrowleft", "arrowright", " "].includes(k)) e.preventDefault();
+
+  if (state === "world" && k === "e" && nearBoss) startBattle(nearBoss);
+
+  if (state === "battle" && B && !B.busy) {
+    if (k === "1") useMove(0);
+    if (k === "2") useMove(1);
+  }
+});
+window.addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
+
+/* =====================================================
+   MOUVEMENT & COLLISIONS
+===================================================== */
+function collides(px, py) {
+  const r = { x: px - 10, y: py + 2, w: 20, h: 14 };
+  if (r.x < 0 || r.y < 0 || r.x + r.w > WORLD_W || r.y + r.h > WORLD_H) return true;
+  for (const s of solids) {
+    if (r.x < s.x + s.w && r.x + r.w > s.x && r.y < s.y + s.h && r.y + r.h > s.y) return true;
+  }
+  return false;
+}
+
+function update(dt) {
+  let dx = 0, dy = 0;
+  if (keys["arrowleft"]  || keys["q"] || keys["a"]) dx -= 1;
+  if (keys["arrowright"] || keys["d"]) dx += 1;
+  if (keys["arrowup"]    || keys["z"] || keys["w"]) dy -= 1;
+  if (keys["arrowdown"]  || keys["s"]) dy += 1;
+  player.moving = dx !== 0 || dy !== 0;
+  if (player.moving) {
+    const len = Math.hypot(dx, dy);
+    const speed = 210;
+    const nx = player.x + (dx / len) * speed * dt;
+    const ny = player.y + (dy / len) * speed * dt;
+    if (!collides(nx, player.y)) player.x = nx;
+    if (!collides(player.x, ny)) player.y = ny;
+  }
+
+  nearBoss = null;
+  for (const b of BOSSES) {
+    if (!b.defeated && Math.hypot(player.x - b.x, player.y - b.y) < 75) nearBoss = b;
+  }
+  $("prompt").classList.toggle("show", !!nearBoss);
+  if (nearBoss) $("prompt").textContent = `Appuie sur E pour affronter ${nearBoss.name}`;
+}
+
+/* =====================================================
+   RENDU DU MONDE
+===================================================== */
+function draw(time) {
+  const camX = Math.max(0, Math.min(WORLD_W - VIEW_W, player.x - VIEW_W / 2));
+  const camY = Math.max(0, Math.min(WORLD_H - VIEW_H, player.y - VIEW_H / 2));
+
+  // herbe en damier
+  const T = 50;
+  for (let ty = Math.floor(camY / T); ty * T < camY + VIEW_H; ty++) {
+    for (let tx = Math.floor(camX / T); tx * T < camX + VIEW_W; tx++) {
+      ctx.fillStyle = (tx + ty) % 2 ? "#5aa84a" : "#63b352";
+      ctx.fillRect(tx * T - camX, ty * T - camY, T + 1, T + 1);
+    }
+  }
+
+  // bordure du monde
+  ctx.strokeStyle = "#2d5a27"; ctx.lineWidth = 8;
+  ctx.strokeRect(-camX, -camY, WORLD_W, WORLD_H);
+
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+
+  // fleurs
+  ctx.font = "16px serif";
+  for (const f of flowers) {
+    if (f.x > camX - 20 && f.x < camX + VIEW_W + 20 && f.y > camY - 20 && f.y < camY + VIEW_H + 20)
+      ctx.fillText(f.e, f.x - camX, f.y - camY);
+  }
+
+  // lacs
+  for (const l of lakes) {
+    ctx.fillStyle = "#2f7fd1";
+    roundRect(l.x - camX, l.y - camY, l.w, l.h, 40); ctx.fill();
+    ctx.strokeStyle = "#8cc8ff"; ctx.lineWidth = 4; ctx.stroke();
+    ctx.strokeStyle = "rgba(255,255,255,.35)"; ctx.lineWidth = 2;
+    for (let i = 0; i < 4; i++) {
+      const wx = l.x + 40 + i * (l.w - 80) / 3, wy = l.y + l.h / 2 + Math.sin(time / 500 + i) * 8;
+      ctx.beginPath(); ctx.moveTo(wx - 14 - camX, wy - camY); ctx.quadraticCurveTo(wx - camX, wy - 8 - camY, wx + 14 - camX, wy - camY); ctx.stroke();
+    }
+  }
+
+  // entités triées par profondeur
+  const ents = [];
+  trees.forEach(t => ents.push({ y: t.y, draw: () => { ctx.font = "44px serif"; ctx.fillText(t.e, t.x - camX, t.y - 14 - camY); } }));
+  BOSSES.forEach(b => ents.push({ y: b.y, draw: () => drawBoss(b, camX, camY, time) }));
+  ents.push({ y: player.y, draw: () => drawPlayer(camX, camY, time) });
+  ents.sort((a, b) => a.y - b.y);
+  ents.forEach(e => {
+    // ne dessiner que ce qui est proche de l'écran
+    e.draw();
+  });
+
+  drawMinimap();
+}
+
+function drawPlayer(camX, camY, time) {
+  const bob = player.moving ? Math.sin(time / 70) * 3 : 0;
+  ctx.fillStyle = "rgba(0,0,0,.25)";
+  ctx.beginPath(); ctx.ellipse(player.x - camX, player.y + 14 - camY, 13, 5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.font = "34px serif";
+  ctx.fillText(player.cls.emoji, player.x - camX, player.y - 4 - camY + bob);
+}
+
+function drawBoss(b, camX, camY, time) {
+  const x = b.x - camX, y = b.y - camY;
+  if (x < -100 || x > VIEW_W + 100 || y < -100 || y > VIEW_H + 100) return;
+  ctx.fillStyle = "rgba(0,0,0,.25)";
+  ctx.beginPath(); ctx.ellipse(x, y + 26, 28, 9, 0, 0, Math.PI * 2); ctx.fill();
+  if (b.defeated) {
+    ctx.globalAlpha = .6; ctx.font = "44px serif"; ctx.fillText("💀", x, y);
+    ctx.globalAlpha = 1;
+    ctx.font = "bold 13px 'Courier New'"; ctx.fillStyle = "#fff"; ctx.fillText("vaincu", x, y + 40);
+    return;
+  }
+  const pulse = 0.5 + 0.5 * Math.sin(time / 300);
+  const g = ctx.createRadialGradient(x, y, 5, x, y, 55 + pulse * 10);
+  g.addColorStop(0, b.glow + "aa"); g.addColorStop(1, b.glow + "00");
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, 65, 0, Math.PI * 2); ctx.fill();
+  ctx.font = "62px serif"; ctx.fillStyle = "#000";
+  ctx.fillText(b.emoji, x, y + Math.sin(time / 400) * 4);
+  ctx.font = "bold 13px 'Courier New'";
+  const w = ctx.measureText(b.name).width + 14;
+  ctx.fillStyle = "rgba(10,12,30,.8)"; ctx.fillRect(x - w / 2, y - 66, w, 20);
+  ctx.fillStyle = "#ffd447"; ctx.fillText(b.name, x, y - 56);
+}
+
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+
+function drawMinimap() {
+  const sx = mini.width / WORLD_W, sy = mini.height / WORLD_H;
+  mctx.fillStyle = "#2e6b2a"; mctx.fillRect(0, 0, mini.width, mini.height);
+  mctx.fillStyle = "#2f7fd1";
+  lakes.forEach(l => mctx.fillRect(l.x * sx, l.y * sy, l.w * sx, l.h * sy));
+  BOSSES.forEach(b => {
+    mctx.fillStyle = b.defeated ? "#888" : "#ff4d4d";
+    mctx.beginPath(); mctx.arc(b.x * sx, b.y * sy, 4, 0, Math.PI * 2); mctx.fill();
+  });
+  mctx.fillStyle = "#fff";
+  mctx.beginPath(); mctx.arc(player.x * sx, player.y * sy, 3.5, 0, Math.PI * 2); mctx.fill();
+}
+
+/* =====================================================
+   COMBAT AU TOUR PAR TOUR
+===================================================== */
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+
+function say(text, wait = 900) {
+  const d = document.createElement("div");
+  d.textContent = text;
+  $("log").appendChild(d);
+  $("log").scrollTop = $("log").scrollHeight;
+  return sleep(wait);
+}
+
+function setBar(barId, hpId, hp, max) {
+  const pct = Math.max(0, hp) / max * 100;
+  const bar = $(barId);
+  bar.style.width = pct + "%";
+  bar.style.background = pct > 50 ? "#3ecf5a" : pct > 25 ? "#f2c230" : "#e8493f";
+  $(hpId).textContent = Math.max(0, hp) + "/" + max;
+}
+function refreshBars() {
+  setBar("pBar", "pHp", player.hp, player.maxHp);
+  setBar("eBar", "eHp", B.bossHp, B.boss.hp);
+}
+function hit(spriteId) {
+  const s = $(spriteId);
+  s.classList.remove("hit"); void s.offsetWidth; s.classList.add("hit");
+}
+
+function buildMoves() {
+  const box = $("moves");
+  box.innerHTML = "";
+  player.cls.moves.forEach((m, i) => {
+    const btn = document.createElement("button");
+    const cooling = m.special && B.lastMove === m.id;
+    btn.disabled = B.busy || cooling;
+    btn.innerHTML = `${i + 1}. ${m.name}<small>${cooling ? "(se recharge…)" : m.desc}</small>`;
+    btn.onclick = () => useMove(i);
+    box.appendChild(btn);
+  });
+}
+
+async function startBattle(boss) {
+  state = "battle";
+  $("prompt").classList.remove("show");
+  player.hp = player.maxHp;
+  B = { boss, bossHp: boss.hp, lastMove: null, busy: true, blocked: null, bossSkip: false, playerSkip: false };
+  $("battle").classList.add("show");
+  $("log").innerHTML = "";
+  $("eName").textContent = boss.name;
+  $("eSprite").textContent = boss.emoji;
+  $("pName").textContent = player.cls.name;
+  $("pSprite").textContent = player.cls.emoji;
+  refreshBars();
+  buildMoves();
+  await say(`${boss.name} te barre la route !`, 1100);
+  B.busy = false;
+  buildMoves();
+  await say("À toi de jouer : choisis ton attaque.", 0);
+}
+
+async function useMove(i) {
+  if (!B || B.busy) return;
+  const m = player.cls.moves[i];
+  if (m.special && B.lastMove === m.id) return;
+  B.busy = true; buildMoves();
+  B.lastMove = m.id;
+  const boss = B.boss;
+
+  if (m.type === "dmg") {
+    B.bossHp -= m.dmg; hit("eSprite"); refreshBars();
+    await say(`Tu utilises ${m.name} ! ${boss.name} perd ${m.dmg} PV.`);
+  } else if (m.type === "greve") {
+    B.bossSkip = true;
+    player.hp = Math.min(player.maxHp, player.hp + 1); refreshBars();
+    await say("Tu lances la grève ! L'adversaire ne pourra pas jouer au prochain tour et tu récupères 1 PV.");
+  } else if (m.type === "parking") {
+    B.blocked = Math.floor(Math.random() * boss.attacks.length);
+    await say(`Tu fermes le parking ! L'attaque « ${boss.attacks[B.blocked].name} » est bloquée pour ce tour.`);
+  }
+
+  if (B.bossHp <= 0) return win();
+
+  await bossTurn();
+  if (state !== "battle") return;       // défaite
+  B.busy = false; buildMoves();
+  await say("À toi de jouer.", 0);
+}
+
+async function bossTurn() {
+  const boss = B.boss;
+  if (B.bossSkip) {
+    B.bossSkip = false; B.blocked = null;
+    await say(`${boss.name} est bloqué et passe son tour !`);
+    return;
+  }
+
+  let first = true;
+  while (true) {
+    const options = boss.attacks.filter((a, idx) => idx !== B.blocked);
+    const atk = pick(options);
+    B.blocked = null;
+
+    await say(`${boss.name} utilise ${atk.name} !`, 700);
+    if (atk.dmg) {
+      player.hp -= atk.dmg; hit("pSprite"); refreshBars();
+      await say(`Tu perds ${atk.dmg} PV.`);
+    }
+    if (atk.heal) {
+      B.bossHp = Math.min(boss.hp, B.bossHp + atk.heal); refreshBars();
+      await say(`${boss.name} récupère ${atk.heal} PV.`);
+    }
+    if (player.hp <= 0) return lose();
+
+    // étourdissement : le boss rejoue (une seule fois d'affilée)
+    if (atk.stun && first) {
+      await say("Tu es sonné et tu passes ton prochain tour !");
+      first = false;
+      continue;
+    }
+    break;
+  }
+}
+
+async function win() {
+  await say(`${B.boss.name} est vaincu !`, 1200);
+  B.boss.defeated = true;
+  closeBattle();
+  player.hp = player.maxHp;
+  updateHudInfo();
+  if (BOSSES.every(b => b.defeated)) {
+    state = "end";
+    $("hud").classList.remove("show");
+    $("end").classList.add("show");
+  }
+}
+
+async function lose() {
+  await say("Tu es à terre… Tu te réveilles à l'entrée du campus.", 1500);
+  closeBattle();
+  player.x = SPAWN.x; player.y = SPAWN.y; player.hp = player.maxHp;
+  updateHudInfo();
+}
+
+function closeBattle() {
+  $("battle").classList.remove("show");
+  B = null;
+  state = state === "end" ? "end" : "world";
+}
+
+/* =====================================================
+   BOUCLE PRINCIPALE
+===================================================== */
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  if (state === "world") update(dt);
+  if (state === "world" || state === "battle") draw(now);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
